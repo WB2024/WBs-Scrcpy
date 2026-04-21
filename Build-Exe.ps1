@@ -11,12 +11,26 @@
 param(
     [switch]$Cli,
     [switch]$Both,
-    [string]$OutDir = (Join-Path $PSScriptRoot "dist"),
+    [string]$OutDir,
     [string]$IconPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$ScriptRoot = if ($PSScriptRoot) {
+    $PSScriptRoot
+}
+elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+else {
+    (Get-Location).Path
+}
+
+if ([string]::IsNullOrWhiteSpace($OutDir)) {
+    $OutDir = Join-Path $ScriptRoot "dist"
+}
 
 function Ensure-Ps2Exe {
     if (Get-Command Invoke-PS2EXE -ErrorAction SilentlyContinue) { return }
@@ -32,22 +46,23 @@ function Ensure-Ps2Exe {
 }
 
 function Compile-Script {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Source,
-        [Parameter(Mandatory)][string]$Output,
+        [Parameter(Mandatory)][string]$OutputPath,
         [switch]$NoConsole
     )
 
-    $args = @{
-        InputFile  = $Source
-        OutputFile = $Output
-        Verbose    = $true
-    }
-    if ($NoConsole) { $args.NoConsole = $true }
-    if ($IconPath -and (Test-Path $IconPath)) { $args.IconFile = $IconPath }
+    $useNoConsole = [bool]$NoConsole.IsPresent
 
-    Write-Host "Compiling $Source -> $Output" -ForegroundColor Cyan
-    Invoke-PS2EXE @args
+    Write-Host "Compiling $Source -> $OutputPath" -ForegroundColor Cyan
+
+    if ($IconPath -and (Test-Path $IconPath)) {
+        Invoke-PS2EXE -inputFile $Source -outputFile $OutputPath -noConsole:$useNoConsole -iconFile $IconPath -verbose
+        return
+    }
+
+    Invoke-PS2EXE -inputFile $Source -outputFile $OutputPath -noConsole:$useNoConsole -verbose
 }
 
 try {
@@ -55,25 +70,25 @@ try {
 
     if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 
-    $core = Join-Path $PSScriptRoot "WBscrcpy.Core.psm1"
-    $cli  = Join-Path $PSScriptRoot "WBscrcpy.ps1"
-    $gui  = Join-Path $PSScriptRoot "WBscrcpy.Gui.ps1"
+    $corePath = Join-Path $ScriptRoot "WBscrcpy.Core.psm1"
+    $cliPath  = Join-Path $ScriptRoot "WBscrcpy.ps1"
+    $guiPath  = Join-Path $ScriptRoot "WBscrcpy.Gui.ps1"
 
-    foreach ($f in @($core, $cli, $gui)) {
+    foreach ($f in @($corePath, $cliPath, $guiPath)) {
         if (-not (Test-Path $f)) { throw "Required source not found: $f" }
     }
 
     # Module must sit next to the .exe at runtime
-    Copy-Item -Path $core -Destination $OutDir -Force
+    Copy-Item -Path $corePath -Destination $OutDir -Force
 
     $buildGui = -not $Cli -or $Both
     $buildCli = $Cli -or $Both
 
     if ($buildGui) {
-        Compile-Script -Source $gui -Output (Join-Path $OutDir "WBscrcpy.exe") -NoConsole
+        Compile-Script -Source $guiPath -OutputPath (Join-Path $OutDir "WBscrcpy.exe") -NoConsole:$true
     }
     if ($buildCli) {
-        Compile-Script -Source $cli -Output (Join-Path $OutDir "WBscrcpy-cli.exe")
+        Compile-Script -Source $cliPath -OutputPath (Join-Path $OutDir "WBscrcpy-cli.exe") -NoConsole:$false
     }
 
     Write-Host ""
@@ -84,5 +99,11 @@ try {
 }
 catch {
     Write-Host "Build failed: $($_.Exception.Message)" -ForegroundColor Red
+    if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) {
+        Write-Host $_.InvocationInfo.PositionMessage -ForegroundColor DarkRed
+    }
+    if ($_.ScriptStackTrace) {
+        Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
+    }
     exit 1
 }
