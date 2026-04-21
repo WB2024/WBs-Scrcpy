@@ -2,7 +2,8 @@
 
 # WB's scrcpy Launcher
 
-**A polished, feature-rich PowerShell wrapper for [scrcpy](https://github.com/Genymobile/scrcpy) — mirror and control Android devices over USB or Wi-Fi with presets, health checks, and an interactive guided setup.**
+**Polished PowerShell + WinForms GUI wrapper for [scrcpy](https://github.com/Genymobile/scrcpy).**
+Mirror and control Android devices over USB or Wi-Fi with presets, health checks, and either a guided CLI or a click-friendly GUI — also packageable as a standalone `.exe`.
 
 [![Platform](https://img.shields.io/badge/platform-Windows-blue?logo=windows)](#requirements)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blueviolet?logo=powershell)](#requirements)
@@ -12,44 +13,58 @@
 
 ---
 
-## Table of Contents
+## Contents
 
-- [Overview](#overview)
-- [Features](#features)
+- [What you get](#what-you-get)
+- [Project files](#project-files)
 - [Requirements](#requirements)
 - [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
+- [Three ways to run](#three-ways-to-run)
+- [GUI walkthrough](#gui-walkthrough)
+- [CLI usage](#cli-usage)
   - [Parameters](#parameters)
-  - [Display Modes](#display-modes)
-  - [Connection Modes](#connection-modes)
-- [Preset System](#preset-system)
-- [Health Check](#health-check)
-- [Examples](#examples)
-- [How It Works](#how-it-works)
+  - [Display modes](#display-modes)
+- [Preset system](#preset-system)
+- [Health check](#health-check)
+- [Building the .exe](#building-the-exe)
+- [Architecture](#architecture)
 - [License](#license)
 
 ---
 
-## Overview
+## What you get
 
-`WBscrcpy.ps1` takes the friction out of launching scrcpy. Instead of memorising a wall of command-line flags every time you want to mirror your phone, this script walks you through a guided menu, remembers your favourite setups as named presets, and handles the tedious ADB plumbing — connecting, selecting devices, applying wake locks, restoring density — automatically.
+| Front-end | File | Best for |
+|---|---|---|
+| **GUI** | `WBscrcpy.Gui.ps1` (and `WBscrcpy.exe` after build) | Everyone. Click, configure, launch. |
+| **CLI** | `WBscrcpy.ps1` | Scripting, hotkeys, automation. |
+| **Core lib** | `WBscrcpy.Core.psm1` | Shared logic — both front-ends import it. |
+
+Common features across both:
+
+- USB and Wi-Fi/Ethernet (TCP/IP) connections, auto-`adb connect` with retry.
+- 6 display presets — normal, fullscreen, screen-off, borderless, high quality, custom DPI.
+- Per-session FPS cap, bitrate, codec (H.264 / H.265 / AV1).
+- Custom display density (DPI) for desktop-style layouts; auto-restore on exit.
+- Stay-awake wake-lock with **guaranteed cleanup** even on Ctrl-C / GUI close.
+- Named presets stored in `WBscrcpy.presets.json` (load, save, list, delete).
+- Health-check diagnostics for `adb` / `scrcpy` / network / device state.
+- Multi-device aware — pick from a list or target by serial.
 
 ---
 
-## Features
+## Project files
 
-| Category | Capability |
-|---|---|
-| **Connection** | USB and Wi-Fi/Ethernet (TCP/IP) with automatic ADB connect/disconnect |
-| **Display** | 6 built-in display modes from a simple window to borderless fullscreen with screen-off |
-| **Performance** | Per-session FPS cap, bitrate, and codec selection (H.264 / H.265 / AV1) |
-| **Density** | Set a custom display DPI for desktop-like layouts; optionally auto-reset on exit |
-| **Wake lock** | Keeps the device screen awake while scrcpy is running; restores state on exit |
-| **Preset system** | Save, load, and list named configurations as a local JSON file |
-| **Health check** | Validates `adb`/`scrcpy` in PATH, ADB server, connected devices, and TCP reachability |
-| **Non-interactive** | Fully scriptable via parameters — no prompts, no menus |
-| **Multi-device** | Lists all ready devices and lets you pick, or target one by serial |
+```
+WBs-Scrcpy/
+├── WBscrcpy.Core.psm1   ← all reusable logic (ADB, presets, scrcpy launch)
+├── WBscrcpy.ps1         ← CLI front-end
+├── WBscrcpy.Gui.ps1     ← WinForms GUI front-end
+├── Build-Exe.ps1        ← packages the GUI/CLI into standalone .exe via ps2exe
+├── README.md
+├── LICENSE
+└── .gitignore
+```
 
 ---
 
@@ -57,229 +72,237 @@
 
 | Tool | Notes |
 |---|---|
-| **PowerShell 5.1+** | Ships with Windows 10/11. PowerShell 7+ also fully supported. |
-| **[scrcpy](https://github.com/Genymobile/scrcpy)** | Must be available in `PATH`. Install via `winget install Genymobile.scrcpy` or the official release. |
-| **[ADB (Android Debug Bridge)](https://developer.android.com/tools/adb)** | Bundled with scrcpy releases, or install Android Platform Tools separately. Must be in `PATH`. |
-| **Android device** | USB debugging enabled. For Wi-Fi, ADB over TCP must be active on the device. |
+| **Windows 10/11** | WinForms GUI is Windows-only. |
+| **PowerShell 5.1+** | Built into Windows. PowerShell 7+ also works. |
+| **[scrcpy](https://github.com/Genymobile/scrcpy)** | Must be on `PATH`. `winget install Genymobile.scrcpy` works. |
+| **[ADB](https://developer.android.com/tools/adb)** | Bundled with scrcpy releases or installed standalone. Must be on `PATH`. |
+| **[ps2exe](https://github.com/MScholtes/PS2EXE)** *(optional)* | Only needed to build the `.exe`. `Build-Exe.ps1` installs it for you. |
 
 ---
 
 ## Installation
 
-1. Clone or download this repository:
-   ```powershell
-   git clone https://github.com/your-username/WBs-Scrcpy.git
-   cd WBs-Scrcpy
-   ```
+```powershell
+git clone https://github.com/your-username/WBs-Scrcpy.git
+cd WBs-Scrcpy
 
-2. Ensure `scrcpy` and `adb` are on your `PATH`:
-   ```powershell
-   Get-Command scrcpy, adb
-   ```
+# Verify dependencies
+Get-Command scrcpy, adb
+.\WBscrcpy.ps1 -HealthCheck
+```
 
-3. *(Optional)* Run the health check to confirm everything is wired up correctly:
-   ```powershell
-   .\WBscrcpy.ps1 -HealthCheck
-   ```
-
-> **Execution Policy** — if PowerShell blocks the script, run:
+> **Execution policy** — if scripts are blocked:
 > ```powershell
 > Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 > ```
 
 ---
 
-## Quick Start
+## Three ways to run
 
-**Interactive guided launch (recommended for first use):**
 ```powershell
+# 1. CLI guided (interactive menus)
 .\WBscrcpy.ps1
-```
-The script will walk you through choosing a connection type, display mode, and optional performance tuning — then offer to save your choices as a named preset.
 
-**Launch straight from a saved preset:**
-```powershell
-.\WBscrcpy.ps1 -LoadPreset "MyPhone"
-```
+# 2. GUI (WinForms window)
+.\WBscrcpy.Gui.ps1
+# or, from the CLI:
+.\WBscrcpy.ps1 -Gui
 
-**One-liner USB launch, fullscreen, no prompts:**
-```powershell
-.\WBscrcpy.ps1 -Mode USB -DisplayMode 2
+# 3. Standalone .exe (after running Build-Exe.ps1)
+.\dist\WBscrcpy.exe
 ```
 
 ---
 
-## Usage
+## GUI walkthrough
+
+Three tabs:
+
+**Launch tab**
+- Choose USB or Network. The Device dropdown auto-populates and filters by connection type.
+- For Network: type IP/port and hit **Connect TCP** to `adb connect` first.
+- Pick a display mode. Density and "Reset on exit" only enable for mode 6.
+- Optional FPS cap, bitrate, codec.
+- **Launch scrcpy** spawns the process; **Stop** kills it. Wake-lock and density are cleaned up automatically when the process exits.
+- Live log panel at the bottom.
+
+**Presets tab**
+- See all saved presets.
+- **Load into form** → applies to the Launch tab.
+- **Save form as…** → prompts for a name and writes to `WBscrcpy.presets.json`.
+- **Delete selected** → removes a preset.
+
+**Health tab**
+- Click **Run health check** — runs every diagnostic and shows results in a colour-coded grid.
+
+---
+
+## CLI usage
 
 ### Parameters
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `-Mode` | `Interactive` \| `USB` \| `Network` | `Interactive` | How to connect. `Interactive` shows guided menus. |
-| `-DefaultIP` | `string` | `192.168.1.220` | Fallback IP used when none is specified. |
-| `-DefaultPort` | `int` | `5555` | Fallback ADB TCP port. |
+| `-Mode` | `Interactive` \| `USB` \| `Network` | `Interactive` | How to connect. |
+| `-DefaultIP` | `string` | `192.168.1.220` | Fallback IP. |
+| `-DefaultPort` | `int` | `5555` | Fallback port. |
 | `-IP` | `string` | — | Device IP for Network mode. |
-| `-Port` | `int` | — | ADB TCP port for Network mode. |
-| `-DeviceSerial` | `string` | — | Target a specific device by its ADB serial. |
-| `-DisplayMode` | `1`–`6` | `1` | Display layout preset (see table below). |
-| `-MaxFps` | `int` | — | Cap the frame rate (e.g. `60`). |
-| `-Bitrate` | `string` | — | Video bitrate, e.g. `8M`, `4M`. |
-| `-Codec` | `h264` \| `h265` \| `av1` | — | Video codec passed to scrcpy. |
-| `-Density` | `int` | — | Custom DPI (120–640). Required for display mode `6`. |
-| `-ResetDensityOnExit` | `switch` | — | Restore device DPI to its default when scrcpy closes. |
-| `-LoadPreset` | `string` | — | Name of a saved preset to load before launch. |
-| `-SavePreset` | `string` | — | Save the current configuration under this name. |
-| `-ListPresets` | `switch` | — | Print all saved presets and exit. |
-| `-HealthCheck` | `switch` | — | Run diagnostics (PATH, ADB server, ping, TCP) and exit. |
-| `-NoWakeLock` | `switch` | — | Skip enabling stay-awake; the device screen may dim. |
-| `-NoInteractiveTuning` | `switch` | — | Suppress the FPS/bitrate/codec prompt in Interactive mode. |
+| `-Port` | `int` | — | ADB TCP port. |
+| `-DeviceSerial` | `string` | — | Target a specific device. For network: `IP:port`. |
+| `-DisplayMode` | `1`–`6` | `1` | Display layout. |
+| `-MaxFps` | `int` | — | FPS cap (15-144). |
+| `-Bitrate` | `string` | — | Video bitrate, e.g. `8M`. |
+| `-Codec` | `h264` \| `h265` \| `av1` | — | Video codec. |
+| `-Density` | `int` | — | DPI 120-640 (required for mode 6). |
+| `-ResetDensityOnExit` | `switch` | — | Restore DPI when scrcpy exits. |
+| `-LoadPreset` | `string` | — | Load preset; explicit params still override. |
+| `-SavePreset` | `string` | — | Save the resolved config under this name. |
+| `-NoLaunch` | `switch` | — | Do not start scrcpy after saving (use with `-SavePreset`). |
+| `-ListPresets` | `switch` | — | Print presets and exit. |
+| `-HealthCheck` | `switch` | — | Run diagnostics and exit. |
+| `-NoWakeLock` | `switch` | — | Skip stay-awake. |
+| `-NoInteractiveTuning` | `switch` | — | Skip the FPS/codec/bitrate prompt. |
+| `-Gui` | `switch` | — | Launch the GUI instead. |
 
----
+### Display modes
 
-### Display Modes
-
-| Mode | Description | scrcpy flags applied |
+| Mode | Description | scrcpy flags |
 |:---:|---|---|
-| `1` | **Normal window** — resizable, decorated | *(none)* |
-| `2` | **Fullscreen** | `--fullscreen` |
-| `3` | **Fullscreen + Screen OFF** — mirror while the device display stays dark | `--fullscreen --turn-screen-off` |
-| `4` | **Borderless fullscreen** — no window chrome | `--fullscreen --window-borderless` |
-| `5` | **High quality** — 1080p cap, 8 Mbps bitrate | `--fullscreen --max-size 1920 --video-bit-rate 8M` |
-| `6` | **Custom density** — sets a DPI on the device then mirrors fullscreen with screen off | `--fullscreen --turn-screen-off` + `adb wm density <value>` |
+| `1` | Normal window | *(none)* |
+| `2` | Fullscreen | `--fullscreen` |
+| `3` | Fullscreen + Screen OFF | `--fullscreen --turn-screen-off` |
+| `4` | Borderless fullscreen | `--fullscreen --window-borderless` |
+| `5` | High quality (1080p / 8 Mbps default) | `--fullscreen --max-size 1920 --video-bit-rate 8M` (your `-Bitrate` overrides) |
+| `6` | Custom DPI + Fullscreen + Screen OFF | `--fullscreen --turn-screen-off` + `adb shell wm density <Density>` |
 
----
-
-### Connection Modes
-
-**USB**
-- Detects all connected USB devices in `device` state.
-- Auto-selects if only one device is present; presents a numbered list otherwise.
-- Warns about devices that are in `unauthorized`, `offline`, or other non-ready states.
-
-**Network (Wi-Fi / Ethernet)**
-- Calls `adb connect <IP>:<port>` and verifies the device reaches `device` state.
-- Automatically disconnects any other stale TCP ADB sessions before launching scrcpy.
-- Validates the IPv4 address and port range before attempting a connection.
-
----
-
-## Preset System
-
-Presets are saved to `WBscrcpy.presets.json` in the same directory as the script. This file is excluded from source control via `.gitignore` so your personal device settings stay local.
-
-**Save a preset interactively:** the script will ask at the end of the guided flow.
-
-**Save a preset non-interactively:**
-```powershell
-.\WBscrcpy.ps1 -Mode Network -IP 192.168.1.50 -DisplayMode 3 -MaxFps 60 -SavePreset "LivingRoomTV"
-```
-
-**Load a preset:**
-```powershell
-.\WBscrcpy.ps1 -LoadPreset "LivingRoomTV"
-```
-
-**List all presets:**
-```powershell
-.\WBscrcpy.ps1 -ListPresets
-```
-
-**How presets and parameters interact:**
-1. The preset is loaded first, populating all stored values.
-2. Any explicit parameters you pass on the command line then *override* the preset values.
-
-This means you can use a preset as a base and tweak one thing without redefining everything:
-```powershell
-# Use the "LivingRoomTV" preset but swap to H.265 just this once
-.\WBscrcpy.ps1 -LoadPreset "LivingRoomTV" -Codec h265
-```
-
----
-
-## Health Check
-
-The `-HealthCheck` switch runs a quick diagnostics pass without launching scrcpy:
+### Examples
 
 ```powershell
-.\WBscrcpy.ps1 -HealthCheck
-# Or target a specific IP/port
-.\WBscrcpy.ps1 -HealthCheck -IP 192.168.1.50 -Port 5555
-```
-
-Checks performed:
-
-- `adb` present in `PATH`
-- `scrcpy` present in `PATH`
-- ADB server can start
-- List of currently connected ADB devices
-- ICMP ping to the target IP (if provided)
-- TCP port reachability test to `<IP>:<Port>`
-
----
-
-## Examples
-
-```powershell
-# Interactive guided launch (default)
-.\WBscrcpy.ps1
-
-# USB, borderless fullscreen, no prompts
+# USB, borderless fullscreen
 .\WBscrcpy.ps1 -Mode USB -DisplayMode 4
 
 # Wi-Fi, fullscreen + screen off, 60 fps, H.265
 .\WBscrcpy.ps1 -Mode Network -IP 192.168.1.42 -DisplayMode 3 -MaxFps 60 -Codec h265
 
-# Load a preset then override the display mode
-.\WBscrcpy.ps1 -LoadPreset "Work" -DisplayMode 2
+# Load preset then override codec
+.\WBscrcpy.ps1 -LoadPreset "Work" -Codec h265
 
-# Save a new preset without launching (use -NoWakeLock as a dummy param to stay non-interactive)
-.\WBscrcpy.ps1 -Mode USB -DisplayMode 5 -MaxFps 120 -SavePreset "HighFPS" -NoWakeLock
+# Save a preset WITHOUT launching scrcpy
+.\WBscrcpy.ps1 -Mode USB -DisplayMode 5 -MaxFps 120 -SavePreset "HighFPS" -NoLaunch
 
-# Display mode 6: custom 240 DPI, restore DPI when done
+# Custom DPI session, restore DPI on exit
 .\WBscrcpy.ps1 -Mode USB -DisplayMode 6 -Density 240 -ResetDensityOnExit
 
-# Target a specific device by serial (useful with multiple devices)
-.\WBscrcpy.ps1 -Mode USB -DeviceSerial "emulator-5554" -DisplayMode 1
+# Target specific device
+.\WBscrcpy.ps1 -Mode USB -DeviceSerial "ABCDEF123" -DisplayMode 1
 
-# Health check against default IP
-.\WBscrcpy.ps1 -HealthCheck
-
-# List all saved presets
-.\WBscrcpy.ps1 -ListPresets
+# Open the GUI
+.\WBscrcpy.ps1 -Gui
 ```
 
 ---
 
-## How It Works
+## Preset system
+
+Presets live in `WBscrcpy.presets.json` next to the script (gitignored). Both GUI and CLI share the same file.
+
+**Resolution order:**
+1. `New-LaunchConfig` defaults
+2. `-LoadPreset` (CLI) / "Load into form" (GUI)
+3. Explicit CLI parameters or GUI form values
+
+So a preset acts as a base; whatever you specify on top wins.
+
+In **interactive CLI mode**, if you load a preset its values are *kept* — the script does not re-prompt for everything. (Previous releases re-asked and silently overwrote presets — fixed.)
+
+---
+
+## Health check
+
+```powershell
+.\WBscrcpy.ps1 -HealthCheck
+.\WBscrcpy.ps1 -HealthCheck -IP 192.168.1.50 -Port 5555
+```
+
+Checks: `adb` in PATH · `scrcpy` in PATH · ADB server start · device list · ping · TCP reachability.
+
+GUI: same checks via the **Health** tab.
+
+---
+
+## Building the .exe
+
+```powershell
+# GUI exe (default, no console window)
+.\Build-Exe.ps1
+
+# CLI exe (console window)
+.\Build-Exe.ps1 -Cli
+
+# Both
+.\Build-Exe.ps1 -Both
+
+# Custom output dir / icon
+.\Build-Exe.ps1 -OutDir "C:\Apps\WBscrcpy" -IconPath ".\icon.ico"
+```
+
+Output lives in `dist/`:
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    WBscrcpy.ps1                      │
-│                                                      │
-│  1. Load presets from WBscrcpy.presets.json          │
-│  2. Apply -LoadPreset (if given)                     │
-│  3. Override with any explicit CLI parameters        │
-│  4. Interactive mode → guided menus                  │
-│     Non-interactive → validate required fields       │
-│  5. Save preset (if requested)                       │
-│  6. Resolve device serial                            │
-│     ├─ USB  → adb devices, pick from list            │
-│     └─ Network → adb connect <IP>:<port>             │
-│  7. Disconnect other stale TCP sessions              │
-│  8. Apply custom density (mode 6)                    │
-│  9. Build scrcpy argument list                       │
-│ 10. Enable stay-awake (unless -NoWakeLock)           │
-│ 11. Launch scrcpy and wait for exit                  │
-│ 12. Disable stay-awake                               │
-│ 13. Reset density (mode 6 + -ResetDensityOnExit)     │
-└──────────────────────────────────────────────────────┘
+dist/
+├── WBscrcpy.exe          ← GUI (windowless)
+├── WBscrcpy-cli.exe      ← CLI (with -Both)
+└── WBscrcpy.Core.psm1    ← required at runtime, copied automatically
 ```
+
+Notes:
+
+- The build uses [ps2exe](https://github.com/MScholtes/PS2EXE). `Build-Exe.ps1` installs it for the current user if missing.
+- **`WBscrcpy.Core.psm1` must stay next to the `.exe`** — it is imported at runtime.
+- The `.exe` is just a wrapper that hosts PowerShell; you still need `adb` and `scrcpy` on `PATH` (or in the same folder) on the target machine.
+- Pin `WBscrcpy.exe` to your taskbar/Start menu for one-click launches.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────┐         ┌─────────────────────┐
+│   WBscrcpy.ps1      │         │   WBscrcpy.Gui.ps1  │
+│   (CLI front-end)   │         │   (WinForms front)  │
+└──────────┬──────────┘         └──────────┬──────────┘
+           │ Import-Module                  │ Import-Module
+           ▼                                ▼
+┌─────────────────────────────────────────────────────┐
+│              WBscrcpy.Core.psm1                     │
+│   Get-AdbDevice • Resolve-UsbDevice •               │
+│   Connect-AdbNetworkDevice • Build-ScrcpyArgs •     │
+│   Invoke-Scrcpy (try/finally cleanup) •             │
+│   Import/Export-Presets • Invoke-HealthCheck        │
+└──────────────────────┬──────────────────────────────┘
+                       │ shells out
+                       ▼
+                ┌─────────────┐    ┌─────────────┐
+                │   adb.exe   │    │ scrcpy.exe  │
+                └─────────────┘    └─────────────┘
+```
+
+Launch flow inside `Invoke-Scrcpy`:
+
+1. Validate `adb` + `scrcpy` on PATH, start ADB server.
+2. Resolve device — USB list pick or `adb connect IP:Port` (with retry).
+3. Disconnect stale TCP devices (logged).
+4. Apply custom DPI if mode 6.
+5. Enable stay-awake.
+6. `Start-Process scrcpy` and wait (or return process for the GUI).
+7. **`finally`**: disable stay-awake, reset DPI if requested. Runs even on crash / Ctrl-C / GUI Stop.
 
 ---
 
 ## License
 
-Distributed under the [MIT License](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ---
 
