@@ -42,7 +42,27 @@ function Ensure-Ps2Exe {
     } catch {
         throw "Could not install ps2exe automatically. Run: Install-Module ps2exe -Scope CurrentUser. Original error: $($_.Exception.Message)"
     }
-    Import-Module ps2exe -Force
+
+    # Install-Module does not update $env:PSModulePath in the current session.
+    # Locate the installed manifest explicitly and import by full path.
+    $ps2exeManifest = $null
+    foreach ($root in @(
+        (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "WindowsPowerShell\Modules"),
+        (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "PowerShell\Modules"),
+        (Join-Path $env:ProgramFiles "WindowsPowerShell\Modules"),
+        (Join-Path $env:ProgramFiles "PowerShell\Modules")
+    )) {
+        if (Test-Path $root) {
+            $found = Get-ChildItem -Path $root -Recurse -Filter "ps2exe.psd1" -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+            if ($found) { $ps2exeManifest = $found; break }
+        }
+    }
+
+    if (-not $ps2exeManifest) {
+        throw "ps2exe installed but manifest not found. Add its Modules folder to PSModulePath and re-run."
+    }
+    Import-Module $ps2exeManifest.FullName -Force
 }
 
 function Compile-Script {
