@@ -111,7 +111,7 @@ WBs-Scrcpy/
 ## Installation
 
 ```powershell
-git clone https://github.com/your-username/WBs-Scrcpy.git
+git clone https://github.com/WB2024/WBs-Scrcpy.git
 cd WBs-Scrcpy
 ```
 
